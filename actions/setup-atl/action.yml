@@ -1,5 +1,5 @@
 # Pulls the installed algotradelib for this runner (the library, Boost and Eigen in one prefix, published by the
-# library's prefix-package workflow) and adds it to CMAKE_PREFIX_PATH:
+# library's package workflow) and adds it to CMAKE_PREFIX_PATH:
 #
 #   - uses: algotradelib/.github/actions/setup-atl@main
 #   - run: cmake -S . -B build
