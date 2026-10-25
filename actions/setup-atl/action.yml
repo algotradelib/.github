@@ -1,0 +1,78 @@
+# Pulls the installed algotradelib for this runner (the library, Boost and Eigen in one prefix, published by the
+# library's prefix-package workflow) and adds it to CMAKE_PREFIX_PATH:
+#
+#   - uses: algotradelib/.github/actions/setup-atl@main
+#   - run: cmake -S . -B build
+#
+# Each prefix fits the runner's default toolchain: GCC with libstdc++ on ubuntu-latest, Apple Clang on
+# macos-latest, MSVC with the shared CRT (/MD and /MDd) on windows-latest. Another compiler or /MT needs its own
+# build of Boost.
+#
+# OpenSSL 3 is not in the prefix; it comes from the runner. On macOS, pass
+# OPENSSL_ROOT_DIR=$(brew --prefix openssl@3) to CMake, since Homebrew's openssl@3 is keg-only.
+#
+# The tag moves with the library's main branch. For a fixed build, pull a digest with oras yourself.
+
+name: setup-atl
+description: Download the installed algotradelib, Boost and Eigen for this runner and add them to CMAKE_PREFIX_PATH.
+
+inputs:
+  channel:
+    description: Which build to pull; the tag is <channel>-<platform>. Only main exists.
+    required: false
+    default: main
+  token:
+    description: >-
+      Token to log in to ghcr.io with. Leave it empty while the package is public. For a private package, pass
+      github.token and give the job packages: read.
+    required: false
+    default: ''
+
+outputs:
+  prefix:
+    description: The unpacked install prefix, as a path CMake accepts on this OS.
+    value: ${{ steps.pull.outputs.prefix }}
+
+runs:
+  using: composite
+  steps:
+    - id: platform
+      shell: bash
+      run: |
+        case "$RUNNER_OS-$RUNNER_ARCH" in
+          Linux-X64) platform=linux-x64 ;;
+          macOS-ARM64) platform=macos-arm64 ;;
+          Windows-X64) platform=windows-x64 ;;
+          *) echo "::error::No installed algotradelib is published for $RUNNER_OS-$RUNNER_ARCH."; exit 1 ;;
+        esac
+        echo "platform=$platform" >> "$GITHUB_OUTPUT"
+
+    # v2.0.2 is the first release whose version table lists ORAS 1.3.4.
+    - uses: oras-project/setup-oras@v2.0.2
+      with:
+        version: 1.3.4
+
+    - id: pull
+      shell: bash
+      env:
+        CHANNEL: ${{ inputs.channel }}
+        PLATFORM: ${{ steps.platform.outputs.platform }}
+        TOKEN: ${{ inputs.token }}
+      run: |
+        # Relative paths from here on: GNU tar in Git Bash reads D:\... as a remote host.
+        dir="$RUNNER_TEMP/algotradelib"
+        rm -rf "$dir" && mkdir -p "$dir" && cd "$dir"
+        # A credentials file of its own: without a token the pull is anonymous even if the job logged in to
+        # ghcr.io earlier, and the caller's own login is left alone.
+        echo '{}' > auth.json
+        if [ -n "$TOKEN" ]; then
+          printf '%s' "$TOKEN" | oras login ghcr.io --registry-config auth.json -u "$GITHUB_ACTOR" --password-stdin
+        fi
+        oras pull --registry-config auth.json "ghcr.io/algotradelib/algotradelib-prefix:$CHANNEL-$PLATFORM"
+        rm -f auth.json
+        tar -xzf "algotradelib-prefix-$PLATFORM.tar.gz"
+        prefix="$(pwd -W 2>/dev/null || pwd)/prefix"
+        # CMake reads this variable as a list in the OS's own separator.
+        if [ "$RUNNER_OS" = Windows ]; then sep=';'; else sep=':'; fi
+        echo "CMAKE_PREFIX_PATH=$prefix${CMAKE_PREFIX_PATH:+$sep$CMAKE_PREFIX_PATH}" >> "$GITHUB_ENV"
+        echo "prefix=$prefix" >> "$GITHUB_OUTPUT"
