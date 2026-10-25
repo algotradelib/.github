@@ -1,14 +1,14 @@
-# Pulls the installed algotradelib for this runner (the library, Boost and Eigen in one prefix, published by the
+# Pulls the installed algotradelib for this runner (the library, Boost and Eigen in one package, published by the
 # library's package workflow) and adds it to CMAKE_PREFIX_PATH:
 #
 #   - uses: algotradelib/.github/actions/setup-atl@main
 #   - run: cmake -S . -B build
 #
-# Each prefix fits the runner's default toolchain: GCC with libstdc++ on ubuntu-latest, Apple Clang on
+# Each package fits the runner's default toolchain: GCC with libstdc++ on ubuntu-latest, Apple Clang on
 # macos-latest, MSVC with the shared CRT (/MD and /MDd) on windows-latest. Another compiler or /MT needs its own
 # build of Boost.
 #
-# OpenSSL 3 is not in the prefix; it comes from the runner. On macOS, pass
+# OpenSSL 3 is not in the package; it comes from the runner. On macOS, pass
 # OPENSSL_ROOT_DIR=$(brew --prefix openssl@3) to CMake, since Homebrew's openssl@3 is keg-only.
 #
 # The tag moves with the library's main branch. For a fixed build, pull a digest with oras yourself.
@@ -29,9 +29,9 @@ inputs:
     default: ''
 
 outputs:
-  prefix:
-    description: The unpacked install prefix, as a path CMake accepts on this OS.
-    value: ${{ steps.pull.outputs.prefix }}
+  path:
+    description: The unpacked package, as a path CMake accepts on this OS; it is also added to CMAKE_PREFIX_PATH.
+    value: ${{ steps.pull.outputs.path }}
 
 runs:
   using: composite
@@ -60,7 +60,7 @@ runs:
         TOKEN: ${{ inputs.token }}
       run: |
         # Relative paths from here on: GNU tar in Git Bash reads D:\... as a remote host.
-        dir="$RUNNER_TEMP/algotradelib"
+        dir="$RUNNER_TEMP/algotradelib-package"
         rm -rf "$dir" && mkdir -p "$dir" && cd "$dir"
         # A credentials file of its own: without a token the pull is anonymous even if the job logged in to
         # ghcr.io earlier, and the caller's own login is left alone.
@@ -68,11 +68,11 @@ runs:
         if [ -n "$TOKEN" ]; then
           printf '%s' "$TOKEN" | oras login ghcr.io --registry-config auth.json -u "$GITHUB_ACTOR" --password-stdin
         fi
-        oras pull --registry-config auth.json "ghcr.io/algotradelib/algotradelib-prefix:$CHANNEL-$PLATFORM"
+        oras pull --registry-config auth.json "ghcr.io/algotradelib/algotradelib:$CHANNEL-$PLATFORM"
         rm -f auth.json
-        tar -xzf "algotradelib-prefix-$PLATFORM.tar.gz"
-        prefix="$(pwd -W 2>/dev/null || pwd)/prefix"
+        tar -xzf "algotradelib-$PLATFORM.tar.gz"
+        path="$(pwd -W 2>/dev/null || pwd)/algotradelib"
         # CMake reads this variable as a list in the OS's own separator.
         if [ "$RUNNER_OS" = Windows ]; then sep=';'; else sep=':'; fi
-        echo "CMAKE_PREFIX_PATH=$prefix${CMAKE_PREFIX_PATH:+$sep$CMAKE_PREFIX_PATH}" >> "$GITHUB_ENV"
-        echo "prefix=$prefix" >> "$GITHUB_OUTPUT"
+        echo "CMAKE_PREFIX_PATH=$path${CMAKE_PREFIX_PATH:+$sep$CMAKE_PREFIX_PATH}" >> "$GITHUB_ENV"
+        echo "path=$path" >> "$GITHUB_OUTPUT"
