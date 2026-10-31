@@ -12,7 +12,8 @@
 # On macOS, pass OPENSSL_ROOT_DIR=$(brew --prefix openssl@3) to CMake, since Homebrew's openssl@3 is keg-only.
 #
 # The tag moves with the library's main branch.
-# For a fixed build, pull a digest with oras yourself.
+# Before the library's first release only the latest build is kept, so a digest whose tag has moved lasts only until
+# the next publish; a fixed build waits for a release.
 
 name: setup-atl
 description: Download the installed algotradelib, Boost and Eigen for this runner and add them to CMAKE_PREFIX_PATH.
