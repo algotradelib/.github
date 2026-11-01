@@ -1,6 +1,7 @@
 ## algotradelib is an event-driven algorithmic trading system based on C++.
 
 <!-- badges: start -->
+[![Lifecycle: experimental](https://img.shields.io/badge/lifecycle-experimental-orange.svg?style=plastic)](https://lifecycle.r-lib.org/articles/stages.html#experimental)
 <!-- badges: end -->
 
 - [algotradelib](https://github.com/algotradelib/algotradelib): A header-only C++ library for algorithmic trading.
