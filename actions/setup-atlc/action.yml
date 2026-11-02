@@ -4,7 +4,7 @@
 #   - run: atlc --version
 #
 # Runners: Linux x64 and arm64 (statically linked, any distribution), macOS arm64, Windows x64.
-# The runtime headers are compiled into atlc; `atlc run` also needs CMake, a C++17 compiler and algotradelib, which
+# The runtime headers are compiled into atlc; compiling its output needs a C++17 compiler and algotradelib, which
 # setup-atl installs.
 #
 # The tag moves with atlc's main branch.
