@@ -6,7 +6,12 @@
 
 - [algotradelib](https://github.com/algotradelib/algotradelib): A header-only C++ library for algorithmic trading.
 - [pyatl](https://github.com/algotradelib/pyatl): Python strategies
-- [atlc](https://github.com/algotradelib/atlc): The atls strategy language
-- cmdatl: CLI also considering agentic AI trading
 
 ![algotradelib and its tools](images/organization.png)
+
+### atls
+
+atls is a short, checked strategy language that compiles to a C++ strategy for algotradelib.
+
+- [atlc](https://github.com/algotradelib/atlc): The atls compiler, atls to C++
+- cmdatl: CLI that builds and runs atls programs, also considering agentic AI trading
