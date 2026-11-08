@@ -1,0 +1,87 @@
+# Points a repository's formula in the Homebrew tap at the commit just pushed to main, after that commit's CI passed.
+# Before the first release each formula pins a commit of main (`url "...git", revision: "<commit>"`); this writes the
+# new commit and a version that sorts higher (`<base>.<commit time, UTC, YYYYMMDDHHMMSS>`), since `brew upgrade`
+# compares versions, then commits and pushes to the tap.
+#
+#   tap:
+#     needs: [build]
+#     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+#     runs-on: ubuntu-latest
+#     steps:
+#       - uses: algotradelib/.github/actions/update-tap@main
+#         with:
+#           formula: algotradelib
+#           token: ${{ secrets.ALGOTRADELIB_PAGE_PAT }}
+#
+# The token must be able to push to the tap: the job's own GITHUB_TOKEN cannot reach another repository.
+# A push event only (it reads the head commit's time); on ubuntu (GNU date).
+
+name: update-tap
+description: Point the repository's Homebrew formula in algotradelib/homebrew-atls at the commit just pushed to main.
+
+inputs:
+  formula:
+    description: The formula's name, Formula/<formula>.rb in the tap.
+    required: true
+  token:
+    description: A token that can push to the tap.
+    required: true
+  tap:
+    description: The tap repository.
+    required: false
+    default: algotradelib/homebrew-atls
+
+runs:
+  using: composite
+  steps:
+    - uses: actions/checkout@v7
+      with:
+        repository: ${{ inputs.tap }}
+        token: ${{ inputs.token }}
+        path: .homebrew-tap
+
+    - shell: bash
+      working-directory: .homebrew-tap
+      env:
+        FORMULA: ${{ inputs.formula }}
+        COMMIT: ${{ github.sha }}
+        WHEN: ${{ github.event.head_commit.timestamp }}
+      run: |
+        set -euo pipefail
+        if [ -z "$WHEN" ]; then
+          echo "::error::update-tap runs on a push event (it reads the head commit's time)."
+          exit 1
+        fi
+        stamp=$(date -u -d "$WHEN" +%Y%m%d%H%M%S)
+        python3 - "Formula/$FORMULA.rb" "$COMMIT" "$stamp" <<'PY'
+        import re, sys
+        path, commit, stamp = sys.argv[1:]
+        text = open(path, encoding="utf-8").read()
+        pins = re.findall(r'revision: "([0-9a-f]{40})"', text)
+        versions = re.findall(r'^\s*version "([^"]+)"', text, re.M)
+        if len(pins) != 1 or len(versions) != 1:
+            sys.exit(f"::error::{path} needs exactly one revision: \"<commit>\" and one version line")
+        if pins[0] == commit:
+            print(f"{path} already pins {commit}")
+            sys.exit(0)
+        base = re.sub(r"\.\d{14}$", "", versions[0])
+        text = text.replace(f'revision: "{pins[0]}"', f'revision: "{commit}"')
+        text = re.sub(r'^(\s*version ")[^"]+(")', rf"\g<1>{base}.{stamp}\g<2>", text, count=1, flags=re.M)
+        open(path, "w", encoding="utf-8").write(text)
+        print(f"{path}: {pins[0][:7]} -> {commit[:7]}, version {base}.{stamp}")
+        PY
+        if git diff --quiet; then
+          exit 0
+        fi
+        git config user.name "github-actions[bot]"
+        git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+        git commit -qam "$FORMULA: ${COMMIT:0:7} [skip ci]"
+        # Another repository's update may land first: replay this one on top, a few times.
+        for attempt in 1 2 3; do
+          if git push -q; then
+            exit 0
+          fi
+          git pull -q --rebase
+        done
+        echo "::error::the tap could not be pushed after three attempts"
+        exit 1
