@@ -14,6 +14,9 @@
 #           token: ${{ secrets.ALGOTRADELIB_PAGE_PAT }}
 #
 # The token must be able to push to the tap: the job's own GITHUB_TOKEN cannot reach another repository.
+# It is masked in the log and given to git as an HTTP header through the environment, never in a URL, a command line
+# or a file. The tap is cloned into a folder of RUNNER_TEMP, removed when the step ends; the caller's workspace is not
+# touched.
 # A push event only (it reads the head commit's time); on ubuntu (GNU date).
 
 name: update-tap
@@ -34,15 +37,10 @@ inputs:
 runs:
   using: composite
   steps:
-    - uses: actions/checkout@v7
-      with:
-        repository: ${{ inputs.tap }}
-        token: ${{ inputs.token }}
-        path: .homebrew-tap
-
     - shell: bash
-      working-directory: .homebrew-tap
       env:
+        TAP: ${{ inputs.tap }}
+        TOKEN: ${{ inputs.token }}
         FORMULA: ${{ inputs.formula }}
         COMMIT: ${{ github.sha }}
         WHEN: ${{ github.event.head_commit.timestamp }}
@@ -52,6 +50,17 @@ runs:
           echo "::error::update-tap runs on a push event (it reads the head commit's time)."
           exit 1
         fi
+        # The token, and the header made of it, never appear in the log.
+        echo "::add-mask::$TOKEN"
+        auth=$(printf 'x-access-token:%s' "$TOKEN" | base64 | tr -d '\n')
+        echo "::add-mask::$auth"
+        export GIT_CONFIG_COUNT=1
+        export GIT_CONFIG_KEY_0="http.https://github.com/.extraheader"
+        export GIT_CONFIG_VALUE_0="AUTHORIZATION: basic $auth"
+        dir=$(mktemp -d "$RUNNER_TEMP/homebrew-tap.XXXXXX")
+        trap 'rm -rf "$dir"' EXIT
+        git clone -q "https://github.com/$TAP.git" "$dir"
+        cd "$dir"
         stamp=$(date -u -d "$WHEN" +%Y%m%d%H%M%S)
         file="Formula/$FORMULA.rb"
         if [ "$(grep -c 'revision: "[0-9a-f]\{40\}"' "$file")" != 1 ] || [ "$(grep -c '^  version "' "$file")" != 1 ]; then
@@ -66,14 +75,11 @@ runs:
         base=$(sed -n 's/^  version "\(.*\)"$/\1/p' "$file" | sed -E 's/\.[0-9]{14}$//')
         sed -i -e "s/revision: \"$old\"/revision: \"$COMMIT\"/" -e "s/^  version \".*\"$/  version \"$base.$stamp\"/" "$file"
         echo "$file: ${old:0:7} -> ${COMMIT:0:7}, version $base.$stamp"
-        if git diff --quiet; then
-          exit 0
-        fi
         git config user.name "github-actions[bot]"
         git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
         git commit -qam "$FORMULA: ${COMMIT:0:7} [skip ci]"
         # Another repository's update may land first: replay this one on top, a few times.
-        for attempt in 1 2 3; do
+        for _ in 1 2 3; do
           if git push -q; then
             exit 0
           fi
