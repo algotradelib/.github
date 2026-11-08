@@ -53,23 +53,19 @@ runs:
           exit 1
         fi
         stamp=$(date -u -d "$WHEN" +%Y%m%d%H%M%S)
-        python3 - "Formula/$FORMULA.rb" "$COMMIT" "$stamp" <<'PY'
-        import re, sys
-        path, commit, stamp = sys.argv[1:]
-        text = open(path, encoding="utf-8").read()
-        pins = re.findall(r'revision: "([0-9a-f]{40})"', text)
-        versions = re.findall(r'^\s*version "([^"]+)"', text, re.M)
-        if len(pins) != 1 or len(versions) != 1:
-            sys.exit(f"::error::{path} needs exactly one revision: \"<commit>\" and one version line")
-        if pins[0] == commit:
-            print(f"{path} already pins {commit}")
-            sys.exit(0)
-        base = re.sub(r"\.\d{14}$", "", versions[0])
-        text = text.replace(f'revision: "{pins[0]}"', f'revision: "{commit}"')
-        text = re.sub(r'^(\s*version ")[^"]+(")', rf"\g<1>{base}.{stamp}\g<2>", text, count=1, flags=re.M)
-        open(path, "w", encoding="utf-8").write(text)
-        print(f"{path}: {pins[0][:7]} -> {commit[:7]}, version {base}.{stamp}")
-        PY
+        file="Formula/$FORMULA.rb"
+        if [ "$(grep -c 'revision: "[0-9a-f]\{40\}"' "$file")" != 1 ] || [ "$(grep -c '^  version "' "$file")" != 1 ]; then
+          echo "::error::$file needs exactly one revision: \"<commit>\" and one version line"
+          exit 1
+        fi
+        old=$(sed -n 's/.*revision: "\([0-9a-f]\{40\}\)".*/\1/p' "$file")
+        if [ "$old" = "$COMMIT" ]; then
+          echo "$file already pins $COMMIT"
+          exit 0
+        fi
+        base=$(sed -n 's/^  version "\(.*\)"$/\1/p' "$file" | sed -E 's/\.[0-9]{14}$//')
+        sed -i -e "s/revision: \"$old\"/revision: \"$COMMIT\"/" -e "s/^  version \".*\"$/  version \"$base.$stamp\"/" "$file"
+        echo "$file: ${old:0:7} -> ${COMMIT:0:7}, version $base.$stamp"
         if git diff --quiet; then
           exit 0
         fi
