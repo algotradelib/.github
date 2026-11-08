@@ -3,21 +3,31 @@
 # new commit and a version that sorts higher (`<base>.<commit time, UTC, YYYYMMDDHHMMSS>`), since `brew upgrade`
 # compares versions, then commits and pushes to the tap.
 #
-#   tap:
-#     needs: [build]
-#     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-#     runs-on: ubuntu-latest
-#     steps:
-#       - uses: algotradelib/.github/actions/update-tap@main
-#         with:
-#           formula: algotradelib
-#           token: ${{ secrets.ALGOTRADELIB_PAGE_PAT }}
+# A workflow of its own that waits for the repository's CI on main, and pins the commit that CI tested:
 #
+#   on:
+#     workflow_run:
+#       workflows: [cmake-check]
+#       types: [completed]
+#       branches: [main]
+#   jobs:
+#     tap:
+#       if: github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push'
+#       runs-on: ubuntu-latest
+#       steps:
+#         - uses: algotradelib/.github/actions/update-tap@main
+#           with:
+#             formula: algotradelib
+#             token: ${{ secrets.ALGOTRADELIB_PAGE_PAT }}
+#             commit: ${{ github.event.workflow_run.head_sha }}
+#             committed-at: ${{ github.event.workflow_run.head_commit.timestamp }}
+#
+# Called from a push event instead, commit and committed-at default to the pushed head commit.
 # The token must be able to push to the tap: the job's own GITHUB_TOKEN cannot reach another repository.
 # It is masked in the log and given to git as an HTTP header through the environment, never in a URL, a command line
 # or a file. The tap is cloned into a folder of RUNNER_TEMP, removed when the step ends; the caller's workspace is not
 # touched.
-# A push event only (it reads the head commit's time); on ubuntu (GNU date).
+# On ubuntu (GNU date).
 
 name: update-tap
 description: Point the repository's Homebrew formula in algotradelib/homebrew-atls at the commit just pushed to main.
@@ -33,6 +43,14 @@ inputs:
     description: The tap repository.
     required: false
     default: algotradelib/homebrew-atls
+  commit:
+    description: The commit to pin; the pushed head commit by default.
+    required: false
+    default: ${{ github.sha }}
+  committed-at:
+    description: That commit's time (ISO 8601), the version's suffix; the pushed head commit's by default.
+    required: false
+    default: ${{ github.event.head_commit.timestamp }}
 
 runs:
   using: composite
@@ -42,12 +60,16 @@ runs:
         TAP: ${{ inputs.tap }}
         TOKEN: ${{ inputs.token }}
         FORMULA: ${{ inputs.formula }}
-        COMMIT: ${{ github.sha }}
-        WHEN: ${{ github.event.head_commit.timestamp }}
+        COMMIT: ${{ inputs.commit }}
+        WHEN: ${{ inputs.committed-at }}
       run: |
         set -euo pipefail
         if [ -z "$WHEN" ]; then
-          echo "::error::update-tap runs on a push event (it reads the head commit's time)."
+          echo "::error::update-tap needs committed-at: the commit's time (a push event gives it by default)."
+          exit 1
+        fi
+        if ! [[ "$COMMIT" =~ ^[0-9a-f]{40}$ ]]; then
+          echo "::error::update-tap needs commit: a full 40-character commit hash."
           exit 1
         fi
         # The token, and the header made of it, never appear in the log.
