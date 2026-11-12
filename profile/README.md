@@ -12,4 +12,4 @@
 ## atls is a strategy language that compiles to C++ as fast as a hand-written strategy.
 
 - [atlc](https://github.com/algotradelib/atlc): The atls compiler, atls to C++
-- cmdatl: CLI that builds and runs atls programs, also considering agentic AI trading
+- [cmdatl](https://github.com/algotradelib/cmdatl): CLI that builds and runs atls programs, also considering agentic AI trading
